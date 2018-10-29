@@ -1,0 +1,22 @@
+{
+  "name": "skillaug/fast-query",
+  "description": "A fast and secure PHP Query Builder component base on PDO",
+  "keywords": ["query builder", "pdo query" ],
+  "type": "php",
+  "license": "BSD-3-Clause",
+  "authors": [
+    {
+      "name": "skillaug",
+      "email": "skillaug@gmail.com"
+    }
+  ],
+  "minimum-stability": "stable",
+  "require": {
+    "php": ">=7.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "skillaug\\components\\": "src/"
+    }
+  }
+}
