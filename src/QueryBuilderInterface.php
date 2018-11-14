@@ -4,6 +4,10 @@ namespace skillaug\components;
 
 interface QueryBuilderInterface {
 
+	public function query( $sql );
+
+	public function transaction($transaction_callable, $err_callback = null);
+
 	public function select( $fields );
 
 	public function from( $table );
