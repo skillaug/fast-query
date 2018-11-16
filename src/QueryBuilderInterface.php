@@ -4,7 +4,7 @@ namespace skillaug\components;
 
 interface QueryBuilderInterface {
 
-	public function query( $sql );
+	public function query( $sql, array $params = [] );
 
 	public function transaction($transaction_callable, $err_callback = null);
 
@@ -22,7 +22,7 @@ interface QueryBuilderInterface {
 
 	public function fullJoin( $table, array $on, $where = [] );
 
-	public function where( array $data );
+	public function where( $data );
 
 	public function orWhere( array $data );
 
@@ -49,8 +49,6 @@ interface QueryBuilderInterface {
 	public function insertAll( array $params = [] );
 
 	public function update( array $params = [] );
-
-	public function updateAll( array $params = [] );
 
 	public function delete();
 }

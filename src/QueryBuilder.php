@@ -38,6 +38,10 @@ class QueryBuilder implements QueryBuilderInterface {
 
 	protected $params = [];
 
+    protected $conditionJoinParams = [];
+
+    protected $conditionParams = [];
+
 	public function init() {
 
 		// set default PDO Attributes config
@@ -88,10 +92,10 @@ class QueryBuilder implements QueryBuilderInterface {
 		return $this;
 	}
 
-	public function query( $sql )
+	public function query( $sql, array $params = [] )
 	{
 		$stmt = $this->pdo->prepare( $sql );
-		$stmt->execute();
+		$stmt->execute($params);
 
 		return $stmt->fetchAll();
 	}
@@ -166,7 +170,7 @@ class QueryBuilder implements QueryBuilderInterface {
 		return $this;
 	}
 
-	public function where( array $conditions ) {
+	public function where( $conditions ) {
 		$this->setWhere( $this->handleWhere( $conditions ) );
 
 		return $this;
@@ -214,28 +218,39 @@ class QueryBuilder implements QueryBuilderInterface {
 	}
 
 	public function one() {
+	    $params = $this->mergeParams();
 		$this->setLimit(1);
 
 		$stmt = $this->pdo->prepare( $this->parseSelectQuery() );
-		$stmt->execute();
+		$stmt->execute($params);
 
 		return $stmt->fetch();
 	}
 
 	public function all() {
-		$stmt = $this->pdo->prepare( $this->parseSelectQuery() );
-		$stmt->execute();
+	    $params = $this->mergeParams();
+        $stmt = $this->pdo->prepare( $this->parseSelectQuery() );
+		$stmt->execute($params);
 
 		return $stmt->fetchAll();
 	}
 
 	public function dumpQuery() {
-		return $this->parseSelectQuery();
+	    $result = [];
+	    $keys = ['select','table','join','where','groupBy','having','orderBy','limit','offset','params','conditionJoinParams','conditionParams'];
+		foreach($keys as $key) {
+		    if(!empty($this->$key)) {
+                $result[$key] = $this->$key;
+            }
+        }
+
+        return $result;
 	}
 
 	public function explain() {
+	    $params = $this->mergeParams();
 		$stmt = $this->pdo->prepare( 'explain '. $this->parseSelectQuery() );
-		$stmt->execute();
+		$stmt->execute($params);
 		return $stmt->fetchAll();
 	}
 
@@ -264,25 +279,20 @@ class QueryBuilder implements QueryBuilderInterface {
 		return $stmt->execute( $insert_values );
 	}
 
-	public function update( array $params = [] ) {
-		return $this->updateAll( [$params] );
-	}
+	public function update( array $params = []) {
+        $this->params    = $params;
+        $conditionParams = $this->conditionParams;
 
-	public function updateAll( array $params = []) {
-		$this->params = $params;
+        $stmt = $this->pdo->prepare( $this->parseUpdateQuery() );
 
-		$stmt = $this->pdo->prepare( $this->parseUpdateQuery() );
-
-		foreach( $params as $param ) {
-			return $stmt->execute( $param );
-		}
-
-		return false;
+        return $stmt->execute( array_merge(array_values($params), $conditionParams) );
 	}
 
 	public function delete() {
+	    $params = $this->mergeParams();
 		$stmt = $this->pdo->prepare( $this->parseDeleteQuery() );
-		return $stmt->execute();
+		$stmt->execute($params);
+        return $stmt->rowCount();
 	}
 
 
@@ -392,8 +402,8 @@ class QueryBuilder implements QueryBuilderInterface {
 	protected function parseUpdateQuery() {
 
 		$dataFields = [];
-		foreach( $this->params[0] as $key => $param ) {
-			$dataFields[] = "{$key}=:{$key}";
+		foreach( $this->params as $key => $param ) {
+			$dataFields[] = "{$key}=?";
 		}
 
 		$sql = "UPDATE {$this->table} SET " . implode( ",", $dataFields ) . " WHERE {$this->where}";
@@ -423,11 +433,17 @@ class QueryBuilder implements QueryBuilderInterface {
 		$this->limit     = null;
 		$this->offset    = null;
 		$this->params    = [];
+        $this->conditionParams     = [];
+        $this->conditionJoinParams = [];
 	}
 
-	protected function handleWhere( array $data ) {
+	protected function handleWhere( $data ) {
 
-		return $this->multiCondition( $data );
+	    if(is_array($data)) {
+            return $this->multiCondition( $data );
+        }
+
+        return $data;
 	}
 
 	protected function handleJoin( array $data ) {
@@ -448,26 +464,47 @@ class QueryBuilder implements QueryBuilderInterface {
 	}
 
 	protected function singleCondition( array $data ) {
-		//todo : need to support between, nested query
 		$result = [];
-		if( count( $data ) === 3 ) {
+        if(isset($data[3])) {
+
+            if(strtolower($data[0]) !== 'between') {
+                throw new \Exception('first value of condition must be "between"');
+            }
+
+            $result[] = $data[1]; //left
+            $result[] = $data[0]; //between
+            $result[] = '?'; //value 1
+            $result[] = 'AND'; //and
+            $result[] = '?'; //value 2
+
+            $this->conditionParams[] = $data[2];
+            $this->conditionParams[] = $data[3];
+
+        } elseif( isset($data[2]) ) {
 			$result[] = $data[1]; //left
 			$result[] = $data[0]; //operation
-			$result[] = is_int( $data[2] ) ? $data[2] : '\''.addcslashes($data[2], "'").'\'';  //right
-		} elseif( count( $data ) === 1 ) {
+			$result[] = '?';  //right
+
+            $this->conditionParams[] = $data[2];
+
+        } else {
 			foreach( $data as $field => $value ) {
 				$isIn   = is_array( $value );
 				$dataIn = [];
 				if( $isIn ) {
 					foreach( $value as $item ) {
-						$dataIn[] = is_int( $item ) ? $item : '\''.addcslashes($item, "'").'\'';
+						$dataIn[] = '?';
+                        $this->conditionParams[] = $item;
 					}
-				}
+				} else {
+                    $this->conditionParams[] = $value;
+                }
+
 				$dataIn = '(' . implode( ',', $dataIn ) . ')';
 
 				$result[] = $field; //left
 				$result[] = ( $isIn ? 'IN' : '=' ); //operation
-				$result[] = ( $isIn ? $dataIn : ( is_int( $value ) ? $value : '\''.addcslashes($value, "'").'\'' ) );  //right
+				$result[] = ( $isIn ? $dataIn : '?' );  //right
 			}
 		}
 
@@ -490,12 +527,7 @@ class QueryBuilder implements QueryBuilderInterface {
 			}
 		} elseif( isset( $data[0] ) && is_array( $data[0] ) ) {
 			foreach( $data as $key => $item ) {
-				if( ( isset( $item[0] ) && is_string( $item[0] ) && is_array( $item[1] ) ) ) { // $item is multi conditions
-					$result[] = ( $key > 0 ? 'AND' : null ) . ' (' . $this->multiCondition( $item, $data[0] ) . ')';
-				} else {
-					$result[] = ( $key > 0 ? 'AND' : null ) . ' ' . $this->singleCondition( $item );
-
-                }
+                $result[] = ( $key > 0 ? 'AND' : null ) . ' (' . $this->multiCondition( $item, $data[0] ) . ')';
             }
         } else {
             $result[] = $this->singleCondition( $data );
@@ -514,4 +546,8 @@ class QueryBuilder implements QueryBuilderInterface {
 
 		return implode( $separator, $result );
 	}
+
+    protected function mergeParams () {
+        return array_merge($this->conditionJoinParams, $this->conditionParams, $this->params);
+    }
 }
