@@ -7,18 +7,17 @@ use PDO;
 
 class QueryBuilder implements QueryBuilderInterface {
 
-	public $configs = [
-		'host' => 'localhost',
-		'port' => '3306',
-		'username' => 'root',
-		'password' => '',
-	];
+	public $configs = [];
 	/**
 	 * @var \PDO
 	 */
 	public $pdo;
 
+    protected $parent;
+
 	protected $select = null;
+
+	protected $selectOption = null;
 
 	protected $table = null;
 
@@ -42,7 +41,13 @@ class QueryBuilder implements QueryBuilderInterface {
 
     protected $conditionParams = [];
 
-	public function init() {
+    public function __construct($configs = []) {
+        if(!empty($configs)) {
+            $this->configs($configs);
+        }
+    }
+
+    public function init() {
 
 		// set default PDO Attributes config
 		if(empty($this->configs['attributes'])) {
@@ -59,7 +64,7 @@ class QueryBuilder implements QueryBuilderInterface {
 		}
 
 		//init PDO
-		$pdo = new PDO( "mysql:host={$this->configs['host']};port={$this->configs['port']};dbname={$this->configs['database']}", $this->configs['username'], $this->configs['password'] );
+		$pdo = @new PDO( "mysql:host={$this->configs['host']};port={$this->configs['port']};dbname={$this->configs['database']}", $this->configs['username'], $this->configs['password'] );
 
 		// set PDO Attributes
 		foreach($this->configs['attributes'] as $attrKey => $attrValue) {
@@ -67,7 +72,9 @@ class QueryBuilder implements QueryBuilderInterface {
 		}
 
 		$this->pdo = $pdo;
-		return $this;
+        $this->configs = null;
+
+        return $this;
 	}
 
 	public function configs ($args = []) {
@@ -100,6 +107,15 @@ class QueryBuilder implements QueryBuilderInterface {
 		return $stmt->fetchAll();
 	}
 
+	public function subQuery()
+	{
+        $subQuery         = new QueryBuilder();
+        $subQuery->parent = $this;
+        $subQuery->pdo    = $this->pdo;
+
+		return $subQuery;
+	}
+
 	public function transaction($transaction_callable, $err_callback = null) {
 		$this->pdo->beginTransaction();
 
@@ -125,77 +141,90 @@ class QueryBuilder implements QueryBuilderInterface {
 		}
 	}
 
-	public function select( $fields = null ) {
-		if( is_array( $fields ) )
-			$fields = implode( ',', $fields );
-
-		if( is_string( $fields ) ) {
-			$this->setSelect( $fields );
-		}
-
-		return $this;
-	}
-
-	public function from( $table ) {
-		$this->setFrom( $table );
+	public function select( $columns, $option = null ) {
+		if( is_array( $columns ) ) {
+            $columns = $this->parseArraySelect($columns);
+        }
+		if( is_string( $columns ) ) {
+            $this->select = $columns;
+        }
+		if(!empty($option)) {
+            $this->selectOption = $option;
+        }
 
 		return $this;
 	}
 
-	public function table( $table ) {
-		return $this->from( $table );
-	}
-
-	public function innerJoin( $table, array $on, $where = [] ) {
-		$this->setJoin( 'INNER JOIN', $table, $on, $where );
+	public function from( $tables ) {
+        $this->table = $this->handleFrom( $tables );
 
 		return $this;
 	}
 
-	public function leftJoin( $table, array $on, $where = [] ) {
-		$this->setJoin( 'LEFT JOIN', $table, $on, $where );
+	public function table( $tables ) {
+		return $this->from( $tables );
+	}
+
+	public function join( $table, $on, $conditions = [] ) {
+		$this->setJoin( 'JOIN', $table, $on, $conditions );
 
 		return $this;
 	}
 
-	public function rightJoin( $table, array $on, $where = [] ) {
-		$this->setJoin( 'RIGHT JOIN', $table, $on, $where );
+	public function innerJoin( $table, $on, $conditions = [] ) {
+		$this->setJoin( 'INNER JOIN', $table, $on, $conditions );
 
 		return $this;
 	}
 
-	public function fullJoin( $table, array $on, $where = [] ) {
-		$this->setJoin( 'FULL OUTER JOIN', $table, $on, $where );
+	public function leftJoin( $table, $on, $conditions = [] ) {
+		$this->setJoin( 'LEFT JOIN', $table, $on, $conditions );
+
+		return $this;
+	}
+
+	public function rightJoin( $table, $on, $conditions = [] ) {
+		$this->setJoin( 'RIGHT JOIN', $table, $on, $conditions );
+
+		return $this;
+	}
+
+	public function fullJoin( $table, $on, $conditions = [] ) {
+		$this->setJoin( 'FULL OUTER JOIN', $table, $on, $conditions );
 
 		return $this;
 	}
 
 	public function where( $conditions ) {
+        if(null !== $this->where) {
+            throw new Exception('The QueryBuilder::where() method just called once for each query');
+        }
+
 		$this->setWhere( $this->handleWhere( $conditions ) );
 
 		return $this;
 	}
 
-	public function orWhere( array $conditions ) {
+	public function orWhere( $conditions ) {
 		$this->setWhere( ' OR ' . $this->handleWhere( $conditions ) );
 
 		return $this;
 	}
 
-	public function andWhere( array $conditions ) {
+	public function andWhere( $conditions ) {
 		$this->setWhere( ' AND ' . $this->handleWhere( $conditions ) );
 
 		return $this;
 	}
 
-	public function orderBy( $field, $sortType = null ) {
+	public function orderBy( $columns, $sortType = null ) {
 
-		if(is_array($field)) {
-			foreach($field as $fieldKey => $fieldItem) {
+		if(is_array($columns)) {
+			foreach($columns as $fieldKey => $fieldItem) {
 				$this->setOrderBy( $fieldKey, $fieldItem );
 			}
 		} else {
-			$this->setOrderBy( $field, $sortType );
+			$this->setOrderBy( $columns, $sortType );
 		}
 
 		return $this;
@@ -247,6 +276,16 @@ class QueryBuilder implements QueryBuilderInterface {
         return $result;
 	}
 
+	public function selectQuery() {
+        if(! empty($this->parent)) {
+            $this->parent->params = array_merge($this->parent->params, $this->params);
+            $this->parent->conditionParams = array_merge($this->parent->conditionParams, $this->conditionParams);
+            $this->parent->conditionJoinParams = array_merge($this->parent->conditionJoinParams, $this->conditionJoinParams);
+        }
+
+        return $this->parseSelectQuery();
+	}
+
 	public function explain() {
 	    $params = $this->mergeParams();
 		$stmt = $this->pdo->prepare( 'explain '. $this->parseSelectQuery() );
@@ -296,36 +335,54 @@ class QueryBuilder implements QueryBuilderInterface {
 	}
 
 
-	protected function setSelect( string $data ) {
-		$this->select = $data;
+	protected function parseArraySelect( array $data ) {
+        $result = [];
+
+        foreach($data as $maybeAlias => $column) {
+            if(is_string($maybeAlias)) {
+                if($column instanceof \Closure) {
+                    $result[] = '(' . $column() . ") AS {$maybeAlias}";
+                } else {
+                    $result[] = "{$column} AS {$maybeAlias}";
+                }
+            } else {
+                $result[] = $column;
+            }
+        }
+		return implode(',', $result);
 	}
 
-	protected function setFrom( $data ) {
+	protected function handleFrom( $data ) {
+        if(empty($data)) {
+            throw new Exception('Table (From) value can not be empty');
+        }
+
 		if( is_array( $data ) ) {
 			foreach( $data as $tblName => $item ) {
 				if(is_int($tblName)) {
-					$table[] = $item;
+					$tables[] = $item;
 				} else {
-					$table[] = "{$tblName} {$item}";
+                    if($item instanceof \Closure) {
+                        $tables[] = '(' . $item() . ") AS {$tblName}";
+                    } else {
+                        $tables[] = "{$tblName} {$item}";
+                    }
 				}
 			}
 
-			$this->table = implode(', ',$table);
+            return implode(', ',$tables);
 
+		} elseif(is_string($data)) {
+			return $data;
 		} else {
-			$this->table = $data;
-		}
+		    throw new Exception('Table (From) value must be string or array');
+        }
 	}
 
-	protected function setJoin( $type, $data, $on, $where = [] ) {
-		if( is_array( $data ) ) {
-			foreach( $data as $tblName => $item ) {
-				$table = "{$tblName} {$item}";
-			}
-		} else {
-			$table = $data;
-		}
-		$this->join[] = "{$type} {$table} ON " . $this->handleJoin( $on ) . ( ! empty( $where ) ? " AND " . $this->handleWhere( $where ) : null );
+	protected function setJoin( $type, $table, $on, $conditions = [] ) {
+        $table = $this->handleFrom($table);
+
+		$this->join[] = "{$type} {$table} ON " . $this->handleOnConditions( $on ) . ( ! empty( $conditions ) ? " AND " . $this->handleWhere( $conditions ) : null );
 	}
 
 	protected function setWhere( string $data ) {
@@ -359,16 +416,15 @@ class QueryBuilder implements QueryBuilderInterface {
 	}
 
 	protected function parseSelectQuery() {
-		$query = $this->selectBase();
-		$this->resetQuery();
-
 		$query_str = '';
-		foreach( $query as $stmt => $stmtItem ) {
+		foreach( $this->selectBase() as $stmt => $stmtItem ) {
 			if($stmt === 'JOIN') {
 				foreach( $stmtItem as $item ) {
 					$query_str .= "{$item}\n";
 				}
-			} elseif( is_array( $stmtItem ) ) {
+			} elseif ($stmt === 'SELECT') {
+                $query_str .= "{$stmt}".($this->selectOption ? " {$this->selectOption}" : null)." {$stmtItem}\n";
+            } elseif( is_array( $stmtItem ) ) {
 				foreach( $stmtItem as $item ) {
 					$query_str .= "{$stmt} {$item}\n";
 				}
@@ -376,8 +432,9 @@ class QueryBuilder implements QueryBuilderInterface {
 				$query_str .= "{$stmt} {$stmtItem}\n";
 			}
 		}
+        $this->resetQuery();
 
-		return $query_str;
+        return $query_str;
 	}
 
 	protected function parseInsertQuery() {
@@ -423,49 +480,101 @@ class QueryBuilder implements QueryBuilderInterface {
 	}
 
 	protected function resetQuery() {
-		$this->select    = null;
-		$this->table     = null;
-		$this->join      = [];
-		$this->where     = null;
-		$this->groupBy   = null;
-		$this->having    = null;
-		$this->orderBy   = null;
-		$this->limit     = null;
-		$this->offset    = null;
-		$this->params    = [];
+        $this->select              = null;
+        $this->selectOption        = null;
+        $this->table               = null;
+        $this->join                = [];
+        $this->where               = null;
+        $this->groupBy             = null;
+        $this->having              = null;
+        $this->orderBy             = null;
+        $this->limit               = null;
+        $this->offset              = null;
+        $this->params              = [];
         $this->conditionParams     = [];
         $this->conditionJoinParams = [];
 	}
 
-	protected function handleWhere( $data ) {
-
-	    if(is_array($data)) {
-            return $this->multiCondition( $data );
-        }
-
-        return $data;
+	protected function handleWhere( $conditions ) {
+        return $this->multiCondition( $conditions );
 	}
 
-	protected function handleJoin( array $data ) {
+	protected function handleOnConditions( $conditions ) {
+        return $this->multiCondition( $conditions, true, 'raw' );
+	}
+
+	protected function singleCondition( $data, $conditionMode ) {
+
+        if($conditionMode === 'raw') {
+            return $this->singleConditionRaw($data);
+        } else {
+            return $this->singleConditionQuestionMark($data);
+        }
+	}
+
+	protected function singleConditionQuestionMark( $data ) {
 		$result = [];
-		if( count( $data ) === 3 ) {
-			$result[] = $data[1]; //left
-			$result[] = $data[0]; //operation
-			$result[] = $data[2];  //right
-		} elseif( count( $data ) === 1 ) {
-			foreach( $data as $field => $value ) {
-				$result[] = $field; //left
-				$result[] = '='; //operation
-				$result[] = $value;  //right
-			}
+
+        $isArray = is_array($data);
+
+        $count = 0;
+		if($isArray) {
+            $count = count($data);
+        }
+
+		if(!$isArray) {
+            $result[] = $data;
+        } elseif( $count === 3 && isset($data[0]) ) {
+            $isIn   = is_array( $data[2] ) || is_callable($data[2]);
+            $isNull   = is_null( $data[2] );
+            if( $isIn ) {
+                $inVal = $this->handleInOperation($data[2]);
+            } else {
+                $this->conditionParams[] = $data[2];
+            }
+
+            $result[] = $data[1] . ' ' . $data[0] . ' ' . ( $isIn ? $inVal : ($isNull ? 'NULL' : '?') );  //right
+        } elseif($count === 4 && isset($data[3])) {
+
+            if(!in_array(strtoupper($data[0]), ['BETWEEN', 'NOT BETWEEN'])) {
+                throw new \Exception('first value of condition must be "BETWEEN" or "NOT BETWEEN"');
+            }
+            $result[] = $data[1]. ' ' . $data[0]. ' ? AND ?'; //value 2
+
+            $this->conditionParams[] = $data[2];
+            $this->conditionParams[] = $data[3];
+
+        } else {
+			if(isset($data[0])) { //exists
+                $result[] = strtoupper($data[0]) . ' ' . ($data[1] instanceof \Closure ? '(' . call_user_func($data[1]) . ')' : $this->multiCondition( $data[1] ));
+            } else {
+                $items = [];
+                foreach( $data as $field => $value ) {
+                    $isIn   = is_array( $value ) || $value instanceof \Closure;
+                    $isNull   = is_null( $value );
+
+                    if( $isIn ) {
+                        $inVal = $this->handleInOperation($value);
+                    } else {
+                        $this->conditionParams[] = $value;
+                    }
+
+                    $items[] = $field.' '.( $isIn ? 'IN' : ($isNull ? 'IS' : '=') ).' '.( $isIn ? $inVal : ($isNull ? 'NULL' : '?') );
+                }
+
+                $result[] = implode( ' AND ', $items );
+            }
 		}
 
 		return implode( ' ', $result );
 	}
 
-	protected function singleCondition( array $data ) {
+	protected function singleConditionRaw( $data ) {
 		$result = [];
-        if(isset($data[3])) {
+
+		if(!is_array($data)) {
+            $result[] = $data;
+        } elseif(isset($data[3])) {
 
             if(strtolower($data[0]) !== 'between') {
                 throw new \Exception('first value of condition must be "between"');
@@ -473,67 +582,93 @@ class QueryBuilder implements QueryBuilderInterface {
 
             $result[] = $data[1]; //left
             $result[] = $data[0]; //between
-            $result[] = '?'; //value 1
+            $result[] = $data[2]; //value 1
             $result[] = 'AND'; //and
-            $result[] = '?'; //value 2
-
-            $this->conditionParams[] = $data[2];
-            $this->conditionParams[] = $data[3];
+            $result[] = $data[3]; //value 2
 
         } elseif( isset($data[2]) ) {
 			$result[] = $data[1]; //left
 			$result[] = $data[0]; //operation
-			$result[] = '?';  //right
 
-            $this->conditionParams[] = $data[2];
+            $isIn   = is_array( $data[2] ) || is_callable($data[2]);
+            if( $isIn ) {
+                $inVal = $this->handleInOperation($data[2], 'raw');
+            }
 
+            $result[] = ( $isIn ? $inVal : $data[2] );  //right
         } else {
-			foreach( $data as $field => $value ) {
-				$isIn   = is_array( $value );
-				$dataIn = [];
-				if( $isIn ) {
-					foreach( $value as $item ) {
-						$dataIn[] = '?';
-                        $this->conditionParams[] = $item;
-					}
-				} else {
-                    $this->conditionParams[] = $value;
+			if(isset($data[0])) {
+                $result[] = strtoupper($data[0]); // 'exists' operation
+                $result[] = $data[1] instanceof \Closure ? '(' . call_user_func($data[1]) . ')' : $this->multiCondition( $data[1] ); //operation
+            } else {
+                foreach( $data as $field => $value ) {
+                    $isIn   = is_array( $value ) || $value instanceof \Closure;
+                    if( $isIn ) {
+                        $inVal = $this->handleInOperation($value, 'raw');
+                    }
+
+                    $result[] = $field; //left
+                    $result[] = ( $isIn ? 'IN' : '=' ); //operation
+                    $result[] = ( $isIn ? $inVal : $value );  //right
                 }
-
-				$dataIn = '(' . implode( ',', $dataIn ) . ')';
-
-				$result[] = $field; //left
-				$result[] = ( $isIn ? 'IN' : '=' ); //operation
-				$result[] = ( $isIn ? $dataIn : '?' );  //right
-			}
+            }
 		}
 
 		return implode( ' ', $result );
 	}
 
-	protected function multiCondition( array $data, $operation = null ) {
-		$result = [];
-		if( isset( $data[0] ) && is_string( $data[0] ) && is_array( $data[1] ) ) { // $data is multi conditions
-			foreach( $data as $key => $item ) {
-				if( $key === 0 ) {
-					continue;
-				} // is 'AND' or 'OR'
-				if( ( isset( $item[0] ) && is_string( $item[0] ) && is_array( $item[1] ) ) ) { // $item is multi conditions
-					$result[] = ( $key > 1 ? strtoupper( $data[0] ) : null ) . ' (' . $this->multiCondition( $item, $data[0] ) . ')';
-				} else {
-					$result[] = ( $key > 1 ? strtoupper( $data[0] ) : null ) . ' ' . $this->singleCondition( $item );
+	protected function handleInOperation($value, $conditionMode = null) {
 
-				}
-			}
-		} elseif( isset( $data[0] ) && is_array( $data[0] ) ) {
-			foreach( $data as $key => $item ) {
-                $result[] = ( $key > 0 ? 'AND' : null ) . ' (' . $this->multiCondition( $item, $data[0] ) . ')';
-            }
+        $isRaw = ($conditionMode === 'raw');
+
+	    if($value instanceof \Closure) {
+            $result = call_user_func($value);
         } else {
-            $result[] = $this->singleCondition( $data );
+            $dataIn = [];
+
+            foreach( (array) $value as $item ) {
+
+                if($isRaw) {
+                    $dataIn[] = $item;
+                } else {
+                    $dataIn[] = '?';
+                    $this->conditionParams[] = $item;
+                }
+            }
+
+            $result = implode( ',', $dataIn );
         }
 
-		return implode( ' ', $result );
+	    return '(' . $result . ')';
+    }
+
+	protected function multiCondition( $data, $isRoot = true, $conditionMode = null) {
+        $isGroup = true && ! $isRoot;
+        $result  = [];
+
+        $is_single = function() use ( &$result, $data, &$isGroup, $conditionMode ) {
+            $result[] = $this->singleCondition( $data, $conditionMode );
+            $isGroup  = false;
+        };
+
+        if(!is_array($data)) {
+            $is_single();
+        } elseif( isset( $data[0] ) && is_string( $data[0] ) && in_array( trim(strtoupper($data[0])), ['AND', 'OR'] ) ) { // $data is multi conditions
+			foreach( $data as $key => $item ) {
+				if( $key === 0 ) {  // is 'AND' or 'OR'
+					continue;
+				}
+                $result[] = ( $key > 1 ? strtoupper( $data[0] ) . ' ' : null ) . $this->multiCondition( $item, false, $conditionMode );
+            }
+		} elseif( isset( $data[0] ) && is_array( $data[0] ) ) {
+			foreach( $data as $key => $item ) {
+                $result[] = ( $key > 0 ? 'AND ' : null ) . $this->multiCondition( $item, false, $conditionMode );
+            }
+        } else {
+            $is_single();
+        }
+
+		return ($isGroup ? '(' : null) . implode( ' ', $result ) . ($isGroup ? ')' : null);
 	}
 
 	private function piq_placeholders( $text, $count = 0, $separator = "," ) {
