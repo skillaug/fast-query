@@ -12,6 +12,8 @@ interface QueryBuilderInterface {
 
     public function subQuery();
 
+	public function newInstance();
+
 	public function transaction($transaction_callable, $err_callback = null);
 
     /**

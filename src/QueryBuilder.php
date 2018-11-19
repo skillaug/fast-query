@@ -116,6 +116,14 @@ class QueryBuilder implements QueryBuilderInterface {
 		return $subQuery;
 	}
 
+	public function newInstance()
+	{
+		$instance         = new $this();
+		$instance->pdo    = $this->pdo;
+
+		return $instance;
+	}
+
 	public function transaction($transaction_callable, $err_callback = null) {
 		$this->pdo->beginTransaction();
 
