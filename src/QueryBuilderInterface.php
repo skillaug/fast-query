@@ -21,7 +21,7 @@ interface QueryBuilderInterface {
      * @param string|array $columns the columns to be selected.
      * Columns can be specified in either a string (e.g. "id, name") or an array (e.g. ['id', 'name']).
      * Columns can be prefixed with table names (e.g. "user.id") and/or contain column aliases (e.g. "user.id AS user_id").
-     * A DB expression may also be passed in form of an sub-query @see subQuery().
+     * A DB expression may also be passed in form of an sub-query.
      *
      * @param string $option [optional] that should be appended to the 'SELECT' keyword. For example, the option 'DISTINCT' can be used.
      *
@@ -31,8 +31,8 @@ interface QueryBuilderInterface {
     public function select( $columns, $option = null );
 
     /**
-     * Sets the FROM part, INTO part or UPDATE part of the query, it depend on what kind of your query (SELECT, INSERT or UPDATE)
-     * This method is alias of the table() method
+     * Sets the FROM part, INTO part or UPDATE part of the query, it depend on what's kind of your query (SELECT, INSERT or UPDATE)
+     * This method is alias of the table() method, please refer to [[table()]] for details
      * @param string|array $tables the table(s) to be selected from, insert into or update.
      *
      * @see table()
@@ -42,7 +42,7 @@ interface QueryBuilderInterface {
 	public function from( $tables );
 
     /**
-     * Sets the FROM part, INTO part or UPDATE part of the query, it depend on what kind of your query (SELECT, INSERT or UPDATE)
+     * Sets the FROM part, INTO part or UPDATE part of the query, it depend on what's kind of your query (SELECT, INSERT or UPDATE)
      *
      * Here are some examples:
      *
@@ -53,9 +53,7 @@ interface QueryBuilderInterface {
      * $query = $db->table('user u, profile');
      *
      * // SELECT * FROM (SELECT * FROM user WHERE active = 1) AS active_users;
-     * $subQuery = function () use ($db) {
-     *      return $db->subQuery()->table('user')->where(['active' => 1])->selectQuery();
-     * };
+     * $subQuery = $db->subQuery()->table('user')->where(['active' => 1]);
      *
      * $db->table(['active_users' => $subQuery]);
      * ```
@@ -88,9 +86,7 @@ interface QueryBuilderInterface {
      *
      *
      * // SELECT * FROM user JOIN (SELECT post_title FROM posts) AS p ON p.author_id = user.id;
-     * $subQuery = function () use ($db) {
-     *      return $db->subQuery()->select('post_title')->table('posts')->selectQuery();
-     * };
+     * $subQuery = $db->subQuery()->select('post_title')->table('posts');
      *
      * $query = $db->table('user')->join(['p' => $subQuery], 'p.author_id = user.id');
      * ```
@@ -193,12 +189,12 @@ interface QueryBuilderInterface {
      *   The method will properly quote the column name and escape values in the range.
      *
      *   You may also specify a sub-query that is used to get the values for the `IN`-condition:
-     *   `['in', 'user_id', function() use ($db) {return $db->subQuery()->select('id')->from('users')->where(['active' => 1])->selectQuery();}]`
+     *   `['in', 'user_id', $db->subQuery()->select('id')->from('users')->where(['active' => 1])]`
      *
      * - **not in**: similar to the `in` operator except that `IN` is replaced with `NOT IN` in the generated condition.
      *
      * - **exists**: operand 1 is a query object that used to build an `EXISTS` condition. For example
-     *   `['exists', function() use ($db) {return $db->subQuery()->select('id')->from('users')->where(['active' => 1])->selectQuery();}]` will result in the following SQL expression:
+     *   `['exists', $db->subQuery()->select('id')->from('users')->where(['active' => 1])]` will result in the following SQL expression:
      *   `EXISTS (SELECT "id" FROM "users" WHERE "active"=1)`.
      *
      * - **not exists**: similar to the `exists` operator except that `EXISTS` is replaced with `NOT EXISTS` in the generated condition.
@@ -208,7 +204,7 @@ interface QueryBuilderInterface {
      *
      * **Note that this method will override any existing WHERE condition. You might want to use [[andWhere()]] or [[orWhere()]] instead.**
      *
-     * @param array $condition the conditions that should be put in the WHERE part.
+     * @param string|array $condition the conditions that should be put in the WHERE part.
      *
      * @return $this the query object itself
      */
@@ -217,7 +213,7 @@ interface QueryBuilderInterface {
     /**
      * Appends conditions to WHERE part and concatenated using `OR` to the query. it similar to where() method @see where()
 
-     * @param array $condition the conditions that should be put in the WHERE part. Please refer to [[where()]]
+     * @param string|array $condition the conditions that should be put in the WHERE part. Please refer to [[where()]]
      * on how to specify this parameter.
      *
      * @return $this the query object itself
@@ -227,7 +223,7 @@ interface QueryBuilderInterface {
     /**
      * Appends conditions to WHERE part and concatenated using `AND` to the query. it similar to where() method @see where()
 
-     * @param array $condition the conditions that should be put in the WHERE part. Please refer to [[where()]]
+     * @param string|array $condition the conditions that should be put in the WHERE part. Please refer to [[where()]]
      * on how to specify this parameter.
      *
      * @return $this the query object itself
@@ -261,21 +257,104 @@ interface QueryBuilderInterface {
      */
 	public function offset( $offset );
 
-	public function one();
+    /**
+     * Execute and return results of the query has built
+     * this method also set the LIMIT clause to 1
+     *
+     * @return object|mixed the results depends on fetch mode of the PDO configs, return object by default, return false on failure
+     */
+    public function one();
 
+    /**
+     * Execute and return results of the query has built
+     *
+     * @return array
+     */
 	public function all();
 
+    /**
+     * Dump the query params has pass into the query for debugs
+     *
+     * @return array
+     */
 	public function dumpQuery();
 
-	public function explain();
-
+    /**
+     * Insert a row into the Database.
+     *
+     * For example,
+     * ```php
+     * $db->table('user')->insert([
+     *     'name' => 'Sam',
+     *     'age' => 30,
+     * ]);
+     * ```
+     * @param array $params the binding parameters to be inserted
+     *
+     * @return bool
+     */
 	public function insert( array $params = [] );
 
+    /**
+     * Insert a row into the Database. Similar to insert() method, except that this method return the last insert id on successful
+     *
+     * @param array $params the binding parameters to be inserted
+     *
+     * @return bool|int the last insert id, return false on failure
+     */
 	public function insertGetLastId( array $params = [] );
 
+    /**
+     * Insert row(s) into the Database
+     *
+     * For example,
+     * ```php
+     * $db->table('user')->insert([
+     *  [
+     *     'name' => 'Sam',
+     *     'age' => 30,
+     *  ],
+     *  [
+     *     'name' => 'Josh',
+     *     'age' => 40,
+     *  ]
+     * ]);
+     * ```
+     *
+     * @param array $params list of the binding parameters to be inserted
+     *
+     * @return bool
+     */
 	public function insertAll( array $params = [] );
 
+    /**
+     * Update an existing row in the Database
+     *
+     * For example,
+     *
+     * ```php
+     * $db->table('user')->where(['id' => 1])->update([
+     *     'name' => 'Sam',
+     *     'age' => 30,
+     * ]);
+     * ```
+     *
+     * @param array $params the binding parameters to be updated
+     *
+     * @return bool
+     */
 	public function update( array $params = [] );
 
+    /**
+     * Delete existing row(s) in the Database
+     *
+     * For example,
+     *
+     * ```php
+     * $db->table('user')->where(['id' => 1])->delete();
+     * ```
+     *
+     * @return int the number of row(s) affected
+     */
 	public function delete();
 }

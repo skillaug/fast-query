@@ -294,13 +294,6 @@ class QueryBuilder implements QueryBuilderInterface {
         return $this->parseSelectQuery();
 	}
 
-	public function explain() {
-	    $params = $this->mergeParams();
-		$stmt = $this->pdo->prepare( 'explain '. $this->parseSelectQuery() );
-		$stmt->execute($params);
-		return $stmt->fetchAll();
-	}
-
 	public function insert( array $params = [] ) {
 		return $this->insertAll( [$params] );
 	}
@@ -348,8 +341,8 @@ class QueryBuilder implements QueryBuilderInterface {
 
         foreach($data as $maybeAlias => $column) {
             if(is_string($maybeAlias)) {
-                if($column instanceof \Closure) {
-                    $result[] = '(' . $column() . ") AS {$maybeAlias}";
+                if($column instanceof $this) {
+                    $result[] = '(' . call_user_func([$column, 'selectQuery']) . ") AS {$maybeAlias}";
                 } else {
                     $result[] = "{$column} AS {$maybeAlias}";
                 }
@@ -370,8 +363,8 @@ class QueryBuilder implements QueryBuilderInterface {
 				if(is_int($tblName)) {
 					$tables[] = $item;
 				} else {
-                    if($item instanceof \Closure) {
-                        $tables[] = '(' . $item() . ") AS {$tblName}";
+                    if($item instanceof $this) {
+                        $tables[] = '(' . call_user_func([$item, 'selectQuery']) . ") AS {$tblName}";
                     } else {
                         $tables[] = "{$tblName} {$item}";
                     }
@@ -554,11 +547,11 @@ class QueryBuilder implements QueryBuilderInterface {
 
         } else {
 			if(isset($data[0])) { //exists
-                $result[] = strtoupper($data[0]) . ' ' . ($data[1] instanceof \Closure ? '(' . call_user_func($data[1]) . ')' : $this->multiCondition( $data[1] ));
+                $result[] = strtoupper($data[0]) . ' ' . ($data[1] instanceof $this ? '(' . call_user_func([$data[1], 'selectQuery']) . ')' : $this->multiCondition( $data[1] ));
             } else {
                 $items = [];
                 foreach( $data as $field => $value ) {
-                    $isIn   = is_array( $value ) || $value instanceof \Closure;
+                    $isIn   = is_array( $value ) || $value instanceof $this;
                     $isNull   = is_null( $value );
 
                     if( $isIn ) {
@@ -607,10 +600,10 @@ class QueryBuilder implements QueryBuilderInterface {
         } else {
 			if(isset($data[0])) {
                 $result[] = strtoupper($data[0]); // 'exists' operation
-                $result[] = $data[1] instanceof \Closure ? '(' . call_user_func($data[1]) . ')' : $this->multiCondition( $data[1] ); //operation
+                $result[] = $data[1] instanceof $this ? '(' . call_user_func([$data[1], 'selectQuery']) . ')' : $this->multiCondition( $data[1] ); //operation
             } else {
                 foreach( $data as $field => $value ) {
-                    $isIn   = is_array( $value ) || $value instanceof \Closure;
+                    $isIn   = is_array( $value ) || $value instanceof $this;
                     if( $isIn ) {
                         $inVal = $this->handleInOperation($value, 'raw');
                     }
@@ -629,8 +622,8 @@ class QueryBuilder implements QueryBuilderInterface {
 
         $isRaw = ($conditionMode === 'raw');
 
-	    if($value instanceof \Closure) {
-            $result = call_user_func($value);
+	    if($value instanceof $this) {
+            $result = call_user_func([$value, 'selectQuery']);
         } else {
             $dataIn = [];
 
