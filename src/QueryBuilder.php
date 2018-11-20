@@ -526,7 +526,7 @@ class QueryBuilder implements QueryBuilderInterface {
 		if(!$isArray) {
             $result[] = $data;
         } elseif( $count === 3 && isset($data[0]) ) {
-            $isIn   = is_array( $data[2] ) || is_callable($data[2]);
+            $isIn   = (is_array( $data[2] ) || $data[2] instanceof $this);
             $isNull   = is_null( $data[2] );
             if( $isIn ) {
                 $inVal = $this->handleInOperation($data[2]);
@@ -551,7 +551,7 @@ class QueryBuilder implements QueryBuilderInterface {
             } else {
                 $items = [];
                 foreach( $data as $field => $value ) {
-                    $isIn   = is_array( $value ) || $value instanceof $this;
+                    $isIn   = (is_array( $value ) || $value instanceof $this);
                     $isNull   = is_null( $value );
 
                     if( $isIn ) {
