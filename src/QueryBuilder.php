@@ -99,12 +99,34 @@ class QueryBuilder implements QueryBuilderInterface {
 		return $this;
 	}
 
-	public function query( $sql, array $params = [] )
+	public function query( string $sql, array $params = [] )
 	{
 		$stmt = $this->pdo->prepare( $sql );
 		$stmt->execute($params);
 
 		return $stmt->fetchAll();
+	}
+
+	public function queryAll( string $sql, array $params = [] )
+	{
+		$stmt = $this->pdo->prepare( $sql );
+		$stmt->execute($params);
+
+		return $stmt->fetchAll();
+	}
+
+	public function queryOne( string $sql, array $params = [] )
+	{
+		$stmt = $this->pdo->prepare( $sql );
+		$stmt->execute($params);
+
+		return $stmt->fetch();
+	}
+
+	public function execute( string $sql, array $params = [] )
+	{
+		$stmt = $this->pdo->prepare( $sql );
+		return $stmt->execute($params);
 	}
 
 	public function subQuery()
@@ -221,6 +243,12 @@ class QueryBuilder implements QueryBuilderInterface {
 
 	public function andWhere( $conditions ) {
 		$this->setWhere( ' AND ' . $this->handleWhere( $conditions ) );
+
+		return $this;
+	}
+
+	public function groupBy( string $column ) {
+		$this->groupBy = $column;
 
 		return $this;
 	}

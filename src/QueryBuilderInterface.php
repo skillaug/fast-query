@@ -8,7 +8,13 @@ interface QueryBuilderInterface {
 
     public function init();
 
-	public function query( $sql, array $params = [] );
+	public function query( string $sql, array $params = [] );
+
+	public function queryAll( string $sql, array $params = [] );
+
+	public function queryOne( string $sql, array $params = [] );
+
+	public function execute( string $sql, array $params = [] );
 
     public function subQuery();
 
@@ -230,7 +236,9 @@ interface QueryBuilderInterface {
      */
 	public function andWhere( $condition );
 
-    /**
+	public function groupBy( string $column );
+
+	/**
      * Sets the ORDER BY part of the query.
      *
      * @param string|array $columns the columns (and the directions) to be ordered by.
