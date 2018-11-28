@@ -153,7 +153,7 @@ class QueryBuilder implements QueryBuilderInterface {
 
 	public function newInstance()
 	{
-		$instance         = new $this();
+		$instance         = new QueryBuilder();
 		$instance->pdo    = $this->pdo;
 
 		return $instance;
