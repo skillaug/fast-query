@@ -8,13 +8,11 @@ interface QueryBuilderInterface {
 
     public function init();
 
-	public function query( string $sql, array $params = [] );
+	public function queryAll( string $sql, $params = [] );
 
-	public function queryAll( string $sql, array $params = [] );
+	public function queryOne( string $sql, $params = [] );
 
-	public function queryOne( string $sql, array $params = [] );
-
-	public function execute( string $sql, array $params = [] );
+	public function execute( string $sql, $params = [] );
 
     public function subQuery();
 

@@ -13,6 +13,8 @@ class QueryBuilder implements QueryBuilderInterface {
 	 */
 	public $pdo;
 
+	public $error;
+
     protected $parent;
 
 	protected $select = null;
@@ -99,34 +101,45 @@ class QueryBuilder implements QueryBuilderInterface {
 		return $this;
 	}
 
-	public function query( string $sql, array $params = [] )
+	public function queryAll( string $sql, $params = [] )
 	{
+		if(!is_array($params)) {
+			$params = [$params];
+		}
+
 		$stmt = $this->pdo->prepare( $sql );
 		$stmt->execute($params);
 
 		return $stmt->fetchAll();
 	}
 
-	public function queryAll( string $sql, array $params = [] )
+	public function queryOne( string $sql, $params = [] )
 	{
-		$stmt = $this->pdo->prepare( $sql );
-		$stmt->execute($params);
+		if(!is_array($params)) {
+			$params = [$params];
+		}
 
-		return $stmt->fetchAll();
-	}
-
-	public function queryOne( string $sql, array $params = [] )
-	{
 		$stmt = $this->pdo->prepare( $sql );
 		$stmt->execute($params);
 
 		return $stmt->fetch();
 	}
 
-	public function execute( string $sql, array $params = [] )
+	public function execute( string $sql, $params = [] )
 	{
+		if(!is_array($params)) {
+			$params = [$params];
+		}
+
 		$stmt = $this->pdo->prepare( $sql );
-		return $stmt->execute($params);
+
+		if($stmt->execute($params)) {
+			return true;
+		} else {
+			$this->error = $stmt->errorInfo();
+
+			throw new Exception($this->error[2], $this->error[0]);
+		}
 	}
 
 	public function subQuery()
@@ -344,7 +357,13 @@ class QueryBuilder implements QueryBuilderInterface {
 			$insert_values = array_merge( $insert_values, array_values( $param ) );
 		}
 
-		return $stmt->execute( $insert_values );
+		if($stmt->execute( $insert_values )) {
+			return true;
+		} else {
+			$this->error = $stmt->errorInfo();
+
+			throw new Exception($this->error[2], $this->error[0]);
+		}
 	}
 
 	public function update( array $params = []) {
@@ -353,14 +372,25 @@ class QueryBuilder implements QueryBuilderInterface {
 
         $stmt = $this->pdo->prepare( $this->parseUpdateQuery() );
 
-        return $stmt->execute( array_merge(array_values($params), $conditionParams) );
+		if($stmt->execute( array_merge(array_values($params), $conditionParams) )) {
+			return true;
+		} else {
+			$this->error = $stmt->errorInfo();
+
+			throw new Exception($this->error[2], $this->error[0]);
+		}
 	}
 
 	public function delete() {
 	    $params = $this->mergeParams();
 		$stmt = $this->pdo->prepare( $this->parseDeleteQuery() );
-		$stmt->execute($params);
-        return $stmt->rowCount();
+		if($stmt->execute($params)) {
+			return $stmt->rowCount();
+		} else {
+			$this->error = $stmt->errorInfo();
+
+			throw new Exception($this->error[2], $this->error[0]);
+		}
 	}
 
 
@@ -509,6 +539,7 @@ class QueryBuilder implements QueryBuilderInterface {
 	}
 
 	protected function resetQuery() {
+        $this->error               = null;
         $this->select              = null;
         $this->selectOption        = null;
         $this->table               = null;
