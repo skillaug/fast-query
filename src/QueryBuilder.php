@@ -66,7 +66,12 @@ class QueryBuilder implements QueryBuilderInterface {
 		}
 
 		//init PDO
-		$pdo = @new PDO( "mysql:host={$this->configs['host']};port={$this->configs['port']};dbname={$this->configs['database']}", $this->configs['username'], $this->configs['password'] );
+
+	    $dsn  = "mysql:host={$this->configs['host']};dbname={$this->configs['database']}";
+	    $dsn .= isset($this->configs['charset']) ? ";{$this->configs['charset']}" : ';charset=utf8';
+	    $dsn .= isset($this->configs['port']) ? ";{$this->configs['port']}" : ';port=3306';
+
+		$pdo = @new PDO( $dsn, $this->configs['username'], $this->configs['password'] );
 
 		// set PDO Attributes
 		foreach($this->configs['attributes'] as $attrKey => $attrValue) {
@@ -745,4 +750,24 @@ class QueryBuilder implements QueryBuilderInterface {
     protected function mergeParams () {
         return array_merge($this->conditionJoinParams, $this->conditionParams, $this->params);
     }
+	public static function esc_like(string $string) {
+		return static::esc($string, '\x25\x5F');
+	}
+
+	public static function esc_sql_like(string $string) {
+		return static::esc($string, '\x00\x0A\x0D\x1A\x22\x25\x27\x5C\x5F');
+	}
+
+	public static function esc_sql(string $string) {
+		return static::esc($string, '\x00\x0A\x0D\x1A\x22\x27\x5C');
+	}
+
+	public static function esc(string $string, $charlist) {
+		if (function_exists('mb_ereg_replace'))
+		{
+			return mb_ereg_replace('['.$charlist.']', '\\\0', $string);
+		} else {
+			return preg_replace('~['.$charlist.']~u', '\\\$0', $string);
+		}
+	}
 }
