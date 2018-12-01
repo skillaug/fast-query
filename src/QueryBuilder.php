@@ -564,20 +564,24 @@ class QueryBuilder implements QueryBuilderInterface {
         return $this->multiCondition( $conditions );
 	}
 
+	protected function handleOnAndConditions( $conditions ) {
+		return $this->multiCondition( $conditions, true, null, 'conditionJoinParams' );
+	}
+
 	protected function handleOnConditions( $conditions ) {
         return $this->multiCondition( $conditions, true, 'raw' );
 	}
 
-	protected function singleCondition( $data, $conditionMode ) {
+	protected function singleCondition( $data, $conditionMode, $holderProperty = 'conditionParams' ) {
 
         if($conditionMode === 'raw') {
             return $this->singleConditionRaw($data);
         } else {
-            return $this->singleConditionQuestionMark($data);
+            return $this->singleConditionQuestionMark($data, $holderProperty);
         }
 	}
 
-	protected function singleConditionQuestionMark( $data ) {
+	protected function singleConditionQuestionMark( $data, $holderProperty ) {
 		$result = [];
 
         $isArray = is_array($data);
@@ -593,9 +597,9 @@ class QueryBuilder implements QueryBuilderInterface {
             $isIn   = (is_array( $data[2] ) || $data[2] instanceof $this);
             $isNull   = is_null( $data[2] );
             if( $isIn ) {
-                $inVal = $this->handleInOperation($data[2]);
+                $inVal = $this->handleInOperation($data[2], null, $holderProperty);
             } else {
-                $this->conditionParams[] = $data[2];
+                $this->{$holderProperty}[] = $data[2];
             }
 
             $result[] = $data[1] . ' ' . $data[0] . ' ' . ( $isIn ? $inVal : ($isNull ? 'NULL' : '?') );  //right
@@ -606,8 +610,8 @@ class QueryBuilder implements QueryBuilderInterface {
             }
             $result[] = $data[1]. ' ' . $data[0]. ' ? AND ?'; //value 2
 
-            $this->conditionParams[] = $data[2];
-            $this->conditionParams[] = $data[3];
+            $this->{$holderProperty}[] = $data[2];
+            $this->{$holderProperty}[] = $data[3];
 
         } else {
 			if(isset($data[0])) { //exists
@@ -619,9 +623,9 @@ class QueryBuilder implements QueryBuilderInterface {
                     $isNull   = is_null( $value );
 
                     if( $isIn ) {
-                        $inVal = $this->handleInOperation($value);
+                        $inVal = $this->handleInOperation($value, null, $holderProperty);
                     } else {
-                        $this->conditionParams[] = $value;
+                        $this->{$holderProperty}[] = $value;
                     }
 
                     $items[] = $field.' '.( $isIn ? 'IN' : ($isNull ? 'IS' : '=') ).' '.( $isIn ? $inVal : ($isNull ? 'NULL' : '?') );
@@ -682,7 +686,7 @@ class QueryBuilder implements QueryBuilderInterface {
 		return implode( ' ', $result );
 	}
 
-	protected function handleInOperation($value, $conditionMode = null) {
+	protected function handleInOperation($value, $conditionMode = null, $holderProperty = 'conditionParams') {
 
         $isRaw = ($conditionMode === 'raw');
 
@@ -697,7 +701,7 @@ class QueryBuilder implements QueryBuilderInterface {
                     $dataIn[] = $item;
                 } else {
                     $dataIn[] = '?';
-                    $this->conditionParams[] = $item;
+                    $this->{$holderProperty}[] = $item;
                 }
             }
 
@@ -707,12 +711,12 @@ class QueryBuilder implements QueryBuilderInterface {
 	    return '(' . $result . ')';
     }
 
-	protected function multiCondition( $data, $isRoot = true, $conditionMode = null) {
+	protected function multiCondition( $data, $isRoot = true, $conditionMode = null, $holderProperty = 'conditionParams') {
         $isGroup = true && ! $isRoot;
         $result  = [];
 
-        $is_single = function() use ( &$result, $data, &$isGroup, $conditionMode ) {
-            $result[] = $this->singleCondition( $data, $conditionMode );
+        $is_single = function() use ( &$result, &$isGroup, $data, $conditionMode, $holderProperty ) {
+            $result[] = $this->singleCondition( $data, $conditionMode, $holderProperty );
             $isGroup  = false;
         };
 
@@ -723,11 +727,11 @@ class QueryBuilder implements QueryBuilderInterface {
 				if( $key === 0 ) {  // is 'AND' or 'OR'
 					continue;
 				}
-                $result[] = ( $key > 1 ? strtoupper( $data[0] ) . ' ' : null ) . $this->multiCondition( $item, false, $conditionMode );
+                $result[] = ( $key > 1 ? strtoupper( $data[0] ) . ' ' : null ) . $this->multiCondition( $item, false, $conditionMode, $holderProperty );
             }
 		} elseif( isset( $data[0] ) && is_array( $data[0] ) ) {
 			foreach( $data as $key => $item ) {
-                $result[] = ( $key > 0 ? 'AND ' : null ) . $this->multiCondition( $item, false, $conditionMode );
+                $result[] = ( $key > 0 ? 'AND ' : null ) . $this->multiCondition( $item, false, $conditionMode, $holderProperty );
             }
         } else {
             $is_single();
