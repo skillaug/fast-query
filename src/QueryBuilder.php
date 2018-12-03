@@ -43,6 +43,13 @@ class QueryBuilder implements QueryBuilderInterface {
 
     protected $conditionParams = [];
 
+    private $logEnable = false;
+
+    private $logInstance = null;
+
+    private $logLevel = LOG_WARNING;
+
+
     public function __construct($configs = []) {
         if(!empty($configs)) {
             $this->configs($configs);
@@ -67,11 +74,12 @@ class QueryBuilder implements QueryBuilderInterface {
 
 		//init PDO
 
-	    $dsn  = "mysql:host={$this->configs['host']};dbname={$this->configs['database']}";
-	    $dsn .= isset($this->configs['charset']) ? ";{$this->configs['charset']}" : ';charset=utf8';
-	    $dsn .= isset($this->configs['port']) ? ";{$this->configs['port']}" : ';port=3306';
+	    $dsn  = "mysql:host={$this->configs['host']};";
+	    $dsn .= isset($this->configs['database']) ? "dbname={$this->configs['database']};" : null;
+	    $dsn .= isset($this->configs['charset']) ? "charset={$this->configs['charset']};" : 'charset=utf8;';
+	    $dsn .= isset($this->configs['port']) ? "port={$this->configs['port']};" : 'port=3306;';
 
-		$pdo = @new PDO( $dsn, $this->configs['username'], $this->configs['password'] );
+		$pdo = new PDO( $dsn, $this->configs['username'], $this->configs['password'] );
 
 		// set PDO Attributes
 		foreach($this->configs['attributes'] as $attrKey => $attrValue) {
@@ -103,6 +111,15 @@ class QueryBuilder implements QueryBuilderInterface {
 		if(isset($args['attributes']))
 			$this->configs['attributes'] = $args['attributes'];
 
+		if(isset($args['log.enable']))
+            $this->logEnable = $args['log.enable'];
+
+		if(isset($args['log.level']))
+            $this->logLevel = $args['log.level'];
+
+		if(isset($args['log.instance']))
+            $this->logInstance = $args['log.instance'];
+
 		return $this;
 	}
 
@@ -113,9 +130,32 @@ class QueryBuilder implements QueryBuilderInterface {
 		}
 
 		$stmt = $this->pdo->prepare( $sql );
-		$stmt->execute($params);
 
-		return $stmt->fetchAll();
+		if($stmt === false) {
+            $this->error = $this->pdo->errorInfo();
+
+            if($this->logEnable && $this->logLevel >= LOG_WARNING) {
+                $this->log($sql,  ['params' => $params, 'execute_result' => null, 'errorInfo' => $this->error]);
+            }
+        } else {
+            $result = $stmt->execute($params);
+
+            if($result) {
+                if($this->logEnable && $this->logLevel >= LOG_DEBUG) {
+                    $this->log($sql,  ['params' => $params, 'execute_result' => $result]);
+                }
+
+                return $stmt->fetchAll();
+            } else {
+                $this->error = $stmt->errorInfo();
+
+                if($this->logEnable && $this->logLevel >= LOG_WARNING) {
+                    $this->log($sql,  ['params' => $params, 'execute_result' => $result, 'errorInfo' => $this->error]);
+                }
+            }
+        }
+
+        return [];
 	}
 
 	public function queryOne( string $sql, $params = [] )
@@ -125,9 +165,32 @@ class QueryBuilder implements QueryBuilderInterface {
 		}
 
 		$stmt = $this->pdo->prepare( $sql );
-		$stmt->execute($params);
 
-		return $stmt->fetch();
+        if($stmt === false) {
+            $this->error = $this->pdo->errorInfo();
+
+            if($this->logEnable && $this->logLevel >= LOG_WARNING) {
+                $this->log($sql,  ['params' => $params, 'execute_result' => null, 'errorInfo' => $this->error]);
+            }
+        } else {
+            $result = $stmt->execute($params);
+
+            if($result) {
+                if($this->logEnable && $this->logLevel >= LOG_DEBUG) {
+                    $this->log($sql,  ['params' => $params, 'execute_result' => $result]);
+                }
+
+                return $stmt->fetch();
+            } else {
+                $this->error = $stmt->errorInfo();
+
+                if($this->logEnable && $this->logLevel >= LOG_WARNING) {
+                    $this->log($sql,  ['params' => $params, 'execute_result' => $result, 'errorInfo' => $this->error]);
+                }
+            }
+        }
+
+        return false;
 	}
 
 	public function execute( string $sql, $params = [] )
@@ -136,24 +199,44 @@ class QueryBuilder implements QueryBuilderInterface {
 			$params = [$params];
 		}
 
-		$stmt = $this->pdo->prepare( $sql );
+        $stmt = $this->pdo->prepare( $sql );
 
-		if($stmt->execute($params)) {
-			return true;
-		} else {
-			$this->error = $stmt->errorInfo();
+        if($stmt === false) {
+            $this->error = $this->pdo->errorInfo();
 
-			throw new Exception($this->error[2], $this->error[0]);
-		}
+            if($this->logEnable && $this->logLevel >= LOG_WARNING) {
+                $this->log($sql,  ['params' => $params, 'execute_result' => null, 'errorInfo' => $this->error]);
+            }
+        } else {
+            $result = $stmt->execute($params);
+
+            if($result) {
+                if($this->logEnable && $this->logLevel >= LOG_DEBUG) {
+                    $this->log($sql,  ['params' => $params, 'execute_result' => $result]);
+                }
+
+                return true;
+            } else {
+                $this->error = $stmt->errorInfo();
+
+                if($this->logEnable && $this->logLevel >= LOG_WARNING) {
+                    $this->log($sql,  ['params' => $params, 'execute_result' => $result, 'errorInfo' => $this->error]);
+                }
+
+                throw new Exception($this->error[2], $this->error[0]);
+            }
+        }
+
+        return false;
 	}
 
 	public function subQuery()
 	{
         $subQuery         = new QueryBuilder();
-        $subQuery->parent = $this;
         $subQuery->pdo    = $this->pdo;
+        $subQuery->parent = $this;
 
-		return $subQuery;
+        return $subQuery;
 	}
 
 	public function newInstance()
@@ -168,24 +251,21 @@ class QueryBuilder implements QueryBuilderInterface {
 		$this->pdo->beginTransaction();
 
 		try{
-
 			if(is_callable($transaction_callable)) {
 				call_user_func($transaction_callable);
 			}
 
 			//We've got this far without an exception, so commit the changes.
 			$this->pdo->commit();
-
 		}
-			//Our catch block will handle any exceptions that are thrown.
+		//Our catch block will handle any exceptions that are thrown.
 		catch(Exception $e){
-
-			if(is_callable($err_callback)) {
-				call_user_func($err_callback, $e);
-			}
-
 			//Rollback the transaction.
 			$this->pdo->rollBack();
+
+            if(is_callable($err_callback)) {
+                call_user_func($err_callback, $e);
+            }
 		}
 	}
 
@@ -254,13 +334,13 @@ class QueryBuilder implements QueryBuilderInterface {
 	}
 
 	public function orWhere( $conditions ) {
-		$this->setWhere( ' OR ' . $this->handleWhere( $conditions ) );
+		$this->setWhere( ' OR (' . $this->handleWhere( $conditions ) .')' );
 
 		return $this;
 	}
 
 	public function andWhere( $conditions ) {
-		$this->setWhere( ' AND ' . $this->handleWhere( $conditions ) );
+		$this->setWhere( ' AND (' . $this->handleWhere( $conditions ) .')' );
 
 		return $this;
 	}
@@ -296,26 +376,23 @@ class QueryBuilder implements QueryBuilderInterface {
 		return $this;
 	}
 
-	public function getQuery() {
+	protected function getQuery() {
 		return $this->parseSelectQuery();
 	}
 
 	public function one() {
-	    $params = $this->mergeParams();
-		$this->setLimit(1);
+        $this->setLimit( 1 );
 
-		$stmt = $this->pdo->prepare( $this->parseSelectQuery() );
-		$stmt->execute($params);
+        $params = $this->mergeParams();
 
-		return $stmt->fetch();
+        return $this->queryOne($this->parseSelectQuery(), $params);
 	}
 
 	public function all() {
-	    $params = $this->mergeParams();
-        $stmt = $this->pdo->prepare( $this->parseSelectQuery() );
-		$stmt->execute($params);
 
-		return $stmt->fetchAll();
+        $params = $this->mergeParams();
+
+		return $this->queryAll($this->parseSelectQuery(), $params);
 	}
 
 	public function dumpQuery() {
@@ -330,7 +407,7 @@ class QueryBuilder implements QueryBuilderInterface {
         return $result;
 	}
 
-	public function selectQuery() {
+    protected function selectQuery() {
         if(! empty($this->parent)) {
             $this->parent->params = array_merge($this->parent->params, $this->params);
             $this->parent->conditionParams = array_merge($this->parent->conditionParams, $this->conditionParams);
@@ -355,47 +432,54 @@ class QueryBuilder implements QueryBuilderInterface {
 	public function insertAll( array $params = [] ) {
 		$this->params = $params;
 
-		$stmt = $this->pdo->prepare( $this->parseInsertQuery() );
-
 		$insert_values = [];
 		foreach( $params as $param ) {
 			$insert_values = array_merge( $insert_values, array_values( $param ) );
 		}
 
-		if($stmt->execute( $insert_values )) {
-			return true;
-		} else {
-			$this->error = $stmt->errorInfo();
-
-			throw new Exception($this->error[2], $this->error[0]);
-		}
+        return $this->execute($this->parseInsertQuery(), $insert_values);
 	}
 
 	public function update( array $params = []) {
         $this->params    = $params;
         $conditionParams = $this->conditionParams;
 
-        $stmt = $this->pdo->prepare( $this->parseUpdateQuery() );
-
-		if($stmt->execute( array_merge(array_values($params), $conditionParams) )) {
-			return true;
-		} else {
-			$this->error = $stmt->errorInfo();
-
-			throw new Exception($this->error[2], $this->error[0]);
-		}
+		return $this->execute( $this->parseUpdateQuery(), array_merge(array_values($params), $conditionParams) );
 	}
 
 	public function delete() {
-	    $params = $this->mergeParams();
-		$stmt = $this->pdo->prepare( $this->parseDeleteQuery() );
-		if($stmt->execute($params)) {
-			return $stmt->rowCount();
-		} else {
-			$this->error = $stmt->errorInfo();
+        $params = $this->mergeParams();
+        $sql    = $this->parseDeleteQuery();
+        $stmt   = $this->pdo->prepare( $sql );
 
-			throw new Exception($this->error[2], $this->error[0]);
-		}
+        if($stmt === false) {
+            $this->error = $this->pdo->errorInfo();
+
+            if($this->logEnable && $this->logLevel >= LOG_WARNING) {
+                $this->log($sql,  ['params' => $params, 'execute_result' => null, 'errorInfo' => $this->error]);
+            }
+        } else {
+            $result = $stmt->execute( $params );
+
+            if( $result ) {
+
+                if($this->logEnable && $this->logLevel >= LOG_DEBUG) {
+                    $this->log($sql,  ['params' => $params, 'execute_result' => $result]);
+                }
+
+                return $stmt->rowCount();
+            } else {
+                $this->error = $stmt->errorInfo();
+
+                if($this->logEnable && $this->logLevel >= LOG_WARNING) {
+                    $this->log($sql,  ['params' => $params, 'execute_result' => $result, 'errorInfo' => $this->error]);
+                }
+
+                throw new Exception( $this->error[2], $this->error[0] );
+            }
+        }
+
+        return false;
 	}
 
 
@@ -774,4 +858,10 @@ class QueryBuilder implements QueryBuilderInterface {
 			return preg_replace('~['.$charlist.']~u', '\\\$0', $string);
 		}
 	}
+
+	private function log($content, $args) {
+        if($this->logInstance !== null) {
+            $this->logInstance->write($content, $args);
+        }
+    }
 }
