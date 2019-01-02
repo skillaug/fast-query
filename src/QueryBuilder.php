@@ -430,6 +430,13 @@ class QueryBuilder implements QueryBuilderInterface {
 	}
 
 	public function insertAll( array $params = [] ) {
+		if(empty($params)) {
+			throw new Exception(sprintf(
+				'Parameter $params passes into QueryBuilder::insertAll() is invalid, empty %s is given. It must be not empty array.',
+				gettype($params)
+			));
+		}
+
 		$this->params = $params;
 
 		$insert_values = [];
@@ -441,6 +448,13 @@ class QueryBuilder implements QueryBuilderInterface {
 	}
 
 	public function update( array $params = []) {
+		if(empty($params)) {
+			throw new Exception(sprintf(
+				'Parameter $params passes into QueryBuilder::update() is invalid, empty %s is given. It must be not empty array.',
+				gettype($params)
+			));
+		}
+
         $this->params    = $params;
         $conditionParams = $this->conditionParams;
 
