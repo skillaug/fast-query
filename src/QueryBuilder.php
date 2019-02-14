@@ -508,7 +508,7 @@ class QueryBuilder implements QueryBuilderInterface {
                     $result[] = "{$column} AS {$maybeAlias}";
                 }
             } else {
-                $result[] = $column;
+                $result[] = '`'.$column.'`';
             }
         }
 		return implode(',', $result);
@@ -603,7 +603,7 @@ class QueryBuilder implements QueryBuilderInterface {
 
 		$dataFields = [];
 		foreach( $this->params[0] as $key => $param ) {
-			$dataFields[] = $key;
+			$dataFields[] = "`{$key}`";
 		}
 
 		$question_marks = [];
@@ -622,7 +622,7 @@ class QueryBuilder implements QueryBuilderInterface {
 
 		$dataFields = [];
 		foreach( $this->params as $key => $param ) {
-			$dataFields[] = "{$key}=?";
+			$dataFields[] = "`{$key}`=?";
 		}
 
 		$sql = "UPDATE {$this->table} SET " . implode( ",", $dataFields ) . " WHERE {$this->where}";
@@ -700,13 +700,13 @@ class QueryBuilder implements QueryBuilderInterface {
                 $this->{$holderProperty}[] = $data[2];
             }
 
-            $result[] = $data[1] . ' ' . $data[0] . ' ' . ( $isIn ? $inVal : ($isNull ? 'NULL' : '?') );  //right
+            $result[] = '`'.$data[1] . '` ' . $data[0] . ' ' . ( $isIn ? $inVal : ($isNull ? 'NULL' : '?') );  //right
         } elseif($count === 4 && isset($data[3])) {
 
             if(!in_array(strtoupper($data[0]), ['BETWEEN', 'NOT BETWEEN'])) {
                 throw new \Exception('first value of condition must be "BETWEEN" or "NOT BETWEEN"');
             }
-            $result[] = $data[1]. ' ' . $data[0]. ' ? AND ?'; //value 2
+            $result[] = '`'.$data[1]. '` ' . $data[0]. ' ? AND ?'; //value 2
 
             $this->{$holderProperty}[] = $data[2];
             $this->{$holderProperty}[] = $data[3];
@@ -726,7 +726,7 @@ class QueryBuilder implements QueryBuilderInterface {
                         $this->{$holderProperty}[] = $value;
                     }
 
-                    $items[] = $field.' '.( $isIn ? 'IN' : ($isNull ? 'IS' : '=') ).' '.( $isIn ? $inVal : ($isNull ? 'NULL' : '?') );
+                    $items[] = '`'.$field.'` '.( $isIn ? 'IN' : ($isNull ? 'IS' : '=') ).' '.( $isIn ? $inVal : ($isNull ? 'NULL' : '?') );
                 }
 
                 $result[] = implode( ' AND ', $items );
