@@ -403,6 +403,7 @@ class QueryBuilder implements QueryBuilderInterface {
                 $result[$key] = $this->$key;
             }
         }
+        $this->resetQuery();
 
         return $result;
 	}
@@ -696,7 +697,7 @@ class QueryBuilder implements QueryBuilderInterface {
             $isNull   = is_null( $data[2] );
             if( $isIn ) {
                 $inVal = $this->handleInOperation($data[2], null, $holderProperty);
-            } else {
+            } elseif ( !$isNull ) {
                 $this->{$holderProperty}[] = $data[2];
             }
 
@@ -722,7 +723,7 @@ class QueryBuilder implements QueryBuilderInterface {
 
                     if( $isIn ) {
                         $inVal = $this->handleInOperation($value, null, $holderProperty);
-                    } else {
+                    } elseif(!$isNull) {
                         $this->{$holderProperty}[] = $value;
                     }
 
