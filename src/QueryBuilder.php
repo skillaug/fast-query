@@ -506,10 +506,10 @@ class QueryBuilder implements QueryBuilderInterface {
                 if($column instanceof $this) {
                     $result[] = '(' . call_user_func([$column, 'selectQuery']) . ") AS {$maybeAlias}";
                 } else {
-                    $result[] = "{$column} AS {$maybeAlias}";
+                    $result[] = $this->handleFieldName($maybeAlias).' AS '.$column;
                 }
             } else {
-                $result[] = '`'.$column.'`';
+                $result[] = $this->handleFieldName($column);
             }
         }
 		return implode(',', $result);
@@ -553,7 +553,7 @@ class QueryBuilder implements QueryBuilderInterface {
 	}
 
 	protected function setOrderBy( $field, $sortType ) {
-		$this->orderBy .= ( null !== $this->orderBy ? ',' : null ) . "{$field} {$sortType}";
+		$this->orderBy .= ( null !== $this->orderBy ? ',' : null ) . $this->handleFieldName($field)." {$sortType}";
 	}
 
 	protected function setLimit( $limit ) {
@@ -701,13 +701,13 @@ class QueryBuilder implements QueryBuilderInterface {
                 $this->{$holderProperty}[] = $data[2];
             }
 
-            $result[] = '`'.$data[1] . '` ' . $data[0] . ' ' . ( $isIn ? $inVal : ($isNull ? 'NULL' : '?') );  //right
+            $result[] = $this->handleFieldName($data[1]) . ' ' . $data[0] . ' ' . ( $isIn ? $inVal : ($isNull ? 'NULL' : '?') );  //right
         } elseif($count === 4 && isset($data[3])) {
 
             if(!in_array(strtoupper($data[0]), ['BETWEEN', 'NOT BETWEEN'])) {
                 throw new \Exception('first value of condition must be "BETWEEN" or "NOT BETWEEN"');
             }
-            $result[] = '`'.$data[1]. '` ' . $data[0]. ' ? AND ?'; //value 2
+            $result[] = $this->handleFieldName($data[1]). ' ' . $data[0]. ' ? AND ?'; //value 2
 
             $this->{$holderProperty}[] = $data[2];
             $this->{$holderProperty}[] = $data[3];
@@ -727,7 +727,7 @@ class QueryBuilder implements QueryBuilderInterface {
                         $this->{$holderProperty}[] = $value;
                     }
 
-                    $items[] = '`'.$field.'` '.( $isIn ? 'IN' : ($isNull ? 'IS' : '=') ).' '.( $isIn ? $inVal : ($isNull ? 'NULL' : '?') );
+                    $items[] = $this->handleFieldName($field).' '.( $isIn ? 'IN' : ($isNull ? 'IS' : '=') ).' '.( $isIn ? $inVal : ($isNull ? 'NULL' : '?') );
                 }
 
                 $result[] = implode( ' AND ', $items );
@@ -853,6 +853,17 @@ class QueryBuilder implements QueryBuilderInterface {
     protected function mergeParams () {
         return array_merge($this->conditionJoinParams, $this->conditionParams, $this->params);
     }
+
+    protected function handleFieldName ($fieldName) {
+	    $temp = explode('.', $fieldName);
+
+	    if (count($temp) === 2) {
+		    return $temp[0].'.`'.$temp[1].'`';
+	    } else {
+		    return "`{$temp[0]}`";
+	    }
+    }
+
 	public static function esc_like(string $string) {
 		return static::esc($string, '\x25\x5F');
 	}
